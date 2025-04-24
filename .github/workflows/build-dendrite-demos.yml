@@ -1,149 +1,122 @@
-# Purpose: Build and release Dendrite demo commands nightly
-# This workflow runs in a separate repository from Dendrite
-# and publishes statically compiled binaries for all demo commands
-
-name: Dendrite Demo Commands Build
+# File: .github/workflows/build-dendrite-demos.yml
+# Purpose: Builds Dendrite Matrix homeserver demo commands
+# Usage with act:
+#   act -j build-and-release --artifact-server-path /tmp/artifacts
+name: Build Dendrite Demo Commands
 
 on:
   schedule:
-    # Run at 00:00 UTC daily
-    - cron: '0 0 * * *'
+    - cron: '0 1 * * *'  # 01:00 UTC daily
+  push:
+    branches: [ main ]
   workflow_dispatch:
-    # Allow manual trigger
-    inputs:
-      release_tag:
-        description: 'Override release tag (default: nightly-YYYY-MM-DD)'
-        required: false
-
-env:
-  GO_VERSION: '1.21'
-  DENDRITE_REPO: 'https://github.com/element-hq/dendrite.git'
 
 jobs:
   build-and-release:
-    name: Build and Release Demo Commands
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
-      contents: write  # Needed for creating releases
+      contents: write
       
-    steps:
-      - name: Get current date
-        id: date
-        run: |
-          echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-          echo "TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+    env:
+      GO_VERSION: '1.21.1'
+      DENDRITE_REPO: 'https://github.com/element-hq/dendrite.git'
+      BUILD_DIR: ${{ github.workspace }}/build
 
-      - name: Setup Go environment
+    steps:
+      - name: Create build directory
+        run: mkdir -p ${{ env.BUILD_DIR }}
+
+      - name: Setup Go
         uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
 
-      - name: Clone Dendrite repository
-        uses: actions/checkout@v4
-        with:
-          repository: 'element-hq/dendrite'
-          path: 'dendrite'
-          fetch-depth: 0  # Full history for version info
+      - name: Clone Dendrite
+        run: |
+          git clone --depth 1 ${{ env.DENDRITE_REPO }} dendrite
+          cd dendrite
+          echo "DENDRITE_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          
+          if [ ! -d "cmd" ] || [ ! -d "contrib" ]; then
+            echo "Error: Invalid repository structure"
+            exit 1
+          fi
 
-      - name: Get Dendrite version info
-        id: version
+      - name: Build commands
         working-directory: dendrite
         run: |
-          echo "COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-          echo "COMMIT_DATE=$(git log -1 --format=%cd --date=short)" >> $GITHUB_OUTPUT
-          echo "BRANCH=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Find all commands to build
-        id: find_commands
-        working-directory: dendrite
-        run: |
-          echo "COMMANDS<<EOF" >> $GITHUB_OUTPUT
-          # Find all directories containing main.go files in cmd and contrib
-          find cmd contrib -type f -name "main.go" -exec dirname {} \; | sort >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Create build directory
-        run: mkdir -p build
-
-      - name: Build all commands
-        working-directory: dendrite
-        env:
-          CGO_ENABLED: 0  # Ensure static compilation
-          GOOS: linux
-          GOARCH: amd64
-        run: |
-          # Read commands list and build each one
-          while IFS= read -r cmd_path; do
-            if [ -z "$cmd_path" ]; then continue; fi
-            
-            binary_name="dendrite-$(basename $cmd_path)"
-            echo "Building $binary_name from $cmd_path..."
-            
-            go build -v -a -trimpath \
-              -ldflags "-s -w -extldflags '-static' \
-                -X github.com/element-hq/dendrite/internal.Version=${{ steps.version.outputs.COMMIT_HASH }}" \
-              -o "../build/$binary_name" "./$cmd_path"
-            
-            if [ $? -ne 0 ]; then
-              echo "::error::Failed to build $binary_name"
-              exit 1
+          # Build all commands in cmd/
+          for cmd in cmd/*/; do
+            if [ -f "${cmd}/main.go" ]; then
+              name=$(basename ${cmd})
+              echo "Building ${name}..."
+              CGO_ENABLED=0 go build \
+                -trimpath \
+                -ldflags="-s -w -extldflags '-static'" \
+                -o "${{ env.BUILD_DIR }}/${name}" \
+                "./${cmd}"
             fi
-          done <<< "${{ steps.find_commands.outputs.COMMANDS }}"
+          done
+          
+          # Build all commands in contrib/
+          for cmd in contrib/*/; do
+            if [ -f "${cmd}/main.go" ]; then
+              name=$(basename ${cmd})
+              echo "Building ${name}..."
+              CGO_ENABLED=0 go build \
+                -trimpath \
+                -ldflags="-s -w -extldflags '-static'" \
+                -o "${{ env.BUILD_DIR }}/${name}" \
+                "./${cmd}"
+            fi
+          done
+          
+          # Verify builds
+          echo "Built binaries:"
+          ls -la ${{ env.BUILD_DIR }}
+          
+          if [ -z "$(ls -A ${{ env.BUILD_DIR }})" ]; then
+            echo "Error: No binaries were built"
+            exit 1
+          fi
 
-      - name: Generate release body
-        id: release_body
+      - name: Generate build info
         run: |
-          cat << EOF > release_notes.md
-          Dendrite Demo Commands - Nightly Build (${{ steps.date.outputs.DATE }})
-          
-          Build Information:
-          - Build Date: ${{ steps.date.outputs.TIMESTAMP }}
-          - Go Version: ${{ env.GO_VERSION }}
-          - Dendrite Commit: ${{ steps.version.outputs.COMMIT_HASH }}
-          - Dendrite Branch: ${{ steps.version.outputs.BRANCH }}
-          
-          These binaries are statically compiled and should run on most Linux x86_64 systems.
+          cat > "${{ env.BUILD_DIR }}/build-info.txt" << EOF
+          Dendrite Demo Commands Build Information
+          --------------------------------------
+          Build Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          Dendrite Commit: ${DENDRITE_SHA}
+          Go Version: ${{ env.GO_VERSION }}
+          Build Trigger: ${{ github.event_name }}
           EOF
 
-      # Create dated nightly release
       - name: Create nightly release
-        uses: ncipollo/release-action@v1
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v1
         with:
-          tag: ${{ github.event.inputs.release_tag || format('nightly-{0}', steps.date.outputs.DATE) }}
-          name: Dendrite Demo Commands - ${{ steps.date.outputs.DATE }}
-          bodyFile: release_notes.md
-          artifacts: "build/*"
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "Dendrite Demo Commands (Nightly $(date +'%Y-%m-%d'))"
+          tag_name: "nightly-$(date +'%Y-%m-%d')"
+          files: |
+            ${{ env.BUILD_DIR }}/*
+          body_path: ${{ env.BUILD_DIR }}/build-info.txt
           prerelease: true
-          allowUpdates: false # Don't update existing dated releases
-          replacesArtifacts: true
+          fail_on_unmatched_files: true
 
-      # Update or create "latest" release
       - name: Update latest release
-        uses: ncipollo/release-action@v1
+        uses: softprops/action-gh-release@v1
         with:
-          tag: latest
-          name: Dendrite Demo Commands - Latest Build
-          bodyFile: release_notes.md
-          artifacts: "build/*"
-          token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: false
-          allowUpdates: true # Allow updating the "latest" release
-          replacesArtifacts: true
-          removeArtifacts: true # Remove old artifacts before uploading new ones
+          name: "Dendrite Demo Commands (Latest)"
+          tag_name: "latest"
+          files: |
+            ${{ env.BUILD_DIR }}/*
+          body_path: ${{ env.BUILD_DIR }}/build-info.txt
+          prerelease: true
+          fail_on_unmatched_files: true
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: dendrite-demo-commands
-          path: build/
-          retention-days: 7
-
-      - name: Report build metrics
-        if: always()
-        run: |
-          echo "Build Summary:"
-          echo "- Total commands built: $(ls -1 build/ | wc -l)"
-          echo "- Build date: ${{ steps.date.outputs.TIMESTAMP }}"
-          echo "- Dendrite commit: ${{ steps.version.outputs.COMMIT_HASH }}"
+          name: dendrite-binaries
+          path: ${{ env.BUILD_DIR }}
+          if-no-files-found: error

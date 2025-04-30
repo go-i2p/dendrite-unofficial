@@ -46,7 +46,7 @@ jobs:
           
           # Build all commands in contrib/
           export CGO_ENABLED=0
-          go build  -trimpath -ldflags="-s -w -extldflags '-static'" -o "${{ env.BUILD_DIR }}/" "./contrib/...
+          go build  -trimpath -ldflags="-s -w -extldflags '-static'" -o "${{ env.BUILD_DIR }}/" ./contrib/...
           
           # Verify builds
           echo "Built binaries:"

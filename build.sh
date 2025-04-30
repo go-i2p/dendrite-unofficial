@@ -18,7 +18,7 @@ go build -o bin/ ./contrib/...
 #cp dendrite-sample.yaml dendrite.yaml
 
 # Build and run the server:
-./bin/dendrite-demo-i2p --config dendrite.yaml
+./bin/dendrite-demo-i2p --config ../dendrite.yaml
 
 # Create an user account (add -admin for an admin user).
 # Specify the localpart only, e.g. 'alice' for '@alice:domain.com'

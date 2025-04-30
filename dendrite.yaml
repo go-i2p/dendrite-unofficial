@@ -167,7 +167,7 @@ client_api:
 
   # If set, allows registration by anyone who knows the shared secret, regardless of
   # whether registration is otherwise disabled.
-  registration_shared_secret: "test"
+  registration_shared_secret: "changeme"
 
   # Whether to require reCAPTCHA for registration.
   enable_registration_captcha: false

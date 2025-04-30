@@ -76,26 +76,26 @@ jobs:
 
       - name: Create nightly release
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v1
+        uses: ncipollo/release-action@v1
         with:
           name: "Dendrite Demo Commands (Nightly $(date +'%Y-%m-%d'))"
-          tag_name: "nightly-$(date +'%Y-%m-%d')"
-          files: |
-            ${{ env.BUILD_DIR }}/*
-          body_path: ${{ env.BUILD_DIR }}/build-info.txt
+          tag: "nightly-$(date +'%Y-%m-%d')"
+          artifacts: "${{ env.BUILD_DIR }}/*"
+          bodyFile: ${{ env.BUILD_DIR }}/build-info.txt
           prerelease: true
-          fail_on_unmatched_files: true
+          allowUpdates: false
+          removeArtifacts: false
 
       - name: Update latest release
-        uses: softprops/action-gh-release@v1
+        uses: ncipollo/release-action@v1
         with:
           name: "Dendrite Demo Commands (Latest)"
-          tag_name: "latest"
-          files: |
-            ${{ env.BUILD_DIR }}/*
-          body_path: ${{ env.BUILD_DIR }}/build-info.txt
+          tag: "latest"
+          artifacts: "${{ env.BUILD_DIR }}/*"
+          bodyFile: ${{ env.BUILD_DIR }}/build-info.txt
           prerelease: true
-          fail_on_unmatched_files: true
+          allowUpdates: true
+          removeArtifacts: true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3

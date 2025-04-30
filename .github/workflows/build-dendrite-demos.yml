@@ -41,18 +41,12 @@ jobs:
         working-directory: dendrite
         run: |
           # Build all commands in cmd/
-          CGO_ENABLED=0 go build \
-            -trimpath \
-            -ldflags="-s -w -extldflags '-static'" \
-            -o "${{ env.BUILD_DIR }}/" \
-            "./cmd/...
+          export CGO_ENABLED=0
+          go build   -trimpath -ldflags="-s -w -extldflags '-static'" -o "${{ env.BUILD_DIR }}/" ./cmd/...
           
           # Build all commands in contrib/
-          CGO_ENABLED=0 go build \
-            -trimpath \
-            -ldflags="-s -w -extldflags '-static'" \
-            -o "${{ env.BUILD_DIR }}/" \
-            "./contrib/...
+          export CGO_ENABLED=0
+          go build  -trimpath -ldflags="-s -w -extldflags '-static'" -o "${{ env.BUILD_DIR }}/" "./contrib/...
           
           # Verify builds
           echo "Built binaries:"

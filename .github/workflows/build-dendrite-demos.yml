@@ -36,40 +36,23 @@ jobs:
           git clone --depth 1 ${{ env.DENDRITE_REPO }} dendrite
           cd dendrite
           echo "DENDRITE_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
-          
-          if [ ! -d "cmd" ] || [ ! -d "contrib" ]; then
-            echo "Error: Invalid repository structure"
-            exit 1
-          fi
 
       - name: Build commands
         working-directory: dendrite
         run: |
           # Build all commands in cmd/
-          for cmd in cmd/*/; do
-            if [ -f "${cmd}/main.go" ]; then
-              name=$(basename ${cmd})
-              echo "Building ${name}..."
-              CGO_ENABLED=0 go build \
-                -trimpath \
-                -ldflags="-s -w -extldflags '-static'" \
-                -o "${{ env.BUILD_DIR }}/${name}" \
-                "./${cmd}"
-            fi
-          done
+          CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags="-s -w -extldflags '-static'" \
+            -o "${{ env.BUILD_DIR }}/" \
+            "./cmd/...
           
           # Build all commands in contrib/
-          for cmd in contrib/*/; do
-            if [ -f "${cmd}/main.go" ]; then
-              name=$(basename ${cmd})
-              echo "Building ${name}..."
-              CGO_ENABLED=0 go build \
-                -trimpath \
-                -ldflags="-s -w -extldflags '-static'" \
-                -o "${{ env.BUILD_DIR }}/${name}" \
-                "./${cmd}"
-            fi
-          done
+          CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags="-s -w -extldflags '-static'" \
+            -o "${{ env.BUILD_DIR }}/" \
+            "./contrib/...
           
           # Verify builds
           echo "Built binaries:"
